@@ -26,14 +26,18 @@ const getShelterById = asyncHandler(async (req, res) => {
 // @route   POST /api/shelters
 // @access  Private/Admin
 const createShelter = asyncHandler(async (req, res) => {
-  const { name, district, capacity, occupied, status, facilities } = req.body;
+  const { name, district, capacity, occupied, status, facilities, location } = req.body;
   const shelter = new Shelter({
     name,
     district,
     capacity,
     occupied,
     status,
-    facilities
+    facilities,
+    location: location ? {
+      type: 'Point',
+      coordinates: [parseFloat(location.lng), parseFloat(location.lat)]
+    } : undefined
   });
   const createdShelter = await shelter.save();
   res.status(201).json(createdShelter);

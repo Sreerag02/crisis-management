@@ -3,7 +3,7 @@ import { useApp } from '../context/AppCtx';
 import { Icon } from './Icon';
 
 export default function Topbar() {
-  const { page, user } = useApp();
+  const { page, user, logout } = useApp();
 
   const getPageTitle = () => {
     const titles = {
@@ -20,32 +20,47 @@ export default function Topbar() {
     return titles[page] || 'CrisisNet';
   };
 
+  const handleLogout = () => {
+    logout();
+    window.location.reload();
+  };
+
   return (
     <div className="topbar">
       <div className="topbar-title">{getPageTitle()}</div>
       <div className="topbar-spacer"></div>
-      
+
       <div className="topbar-search">
         <Icon name="search" size={14}/>
         <input placeholder="Search records, alerts…"/>
       </div>
 
-      <button className="topbar-btn">
-        <Icon name="notif" size={16}/>
+      <button 
+        className="btn btn-outline" 
+        onClick={handleLogout}
+        style={{
+          marginRight: '16px',
+          padding: '6px 12px',
+          fontSize: '12px',
+          border: '1px solid #ddd',
+          borderRadius: '6px',
+          background: 'white',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px'
+        }}
+      >
+        <Icon name="logout" size={14} />
+        Logout
       </button>
-
-      <button className="topbar-btn">
-        <Icon name="settings" size={16}/>
-      </button>
-
-      <div className="section-divider" style={{height:24, width:1, margin:'0 8px', background:'var(--border)'}}></div>
 
       <div className="topbar-user">
         <div style={{textAlign:'right', marginRight:8}}>
-          <div className="user-name">{user.name}</div>
-          <div className="user-role">{user.role}</div>
+          <div className="user-name">{user?.name}</div>
+          <div className="user-role">{user?.role?.toUpperCase()}</div>
         </div>
-        <div className="user-avatar">{user.avatar}</div>
+        <div className="user-avatar">{user?.avatar}</div>
       </div>
     </div>
   );

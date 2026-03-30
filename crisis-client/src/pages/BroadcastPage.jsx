@@ -1,12 +1,16 @@
 import React, { useState, useEffect } from 'react';
+import { useApp } from '../context/AppCtx';
 import { api } from '../services/api';
 import Modal from '../components/Modal';
 
 export default function BroadcastPage() {
+  const { user } = useApp();
   const [broadcasts, setBroadcasts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({type:'Donation', title:'', district:'', urgent:false, message:''});
+
+  const canBroadcast = user?.role === 'admin' || user?.role === 'volunteer';
 
   useEffect(() => {
     fetchBroadcasts();
@@ -62,7 +66,9 @@ export default function BroadcastPage() {
           <div className="page-title">Citizen Help & Donation Broadcast</div>
           <div className="page-subtitle">Geo-targeted broadcasts for emergency needs and volunteer calls</div>
         </div>
-        <button className="btn btn-primary" onClick={()=>setShowAdd(true)}>📢 New Broadcast</button>
+        {canBroadcast && (
+          <button className="btn btn-primary" onClick={()=>setShowAdd(true)}>📢 New Broadcast</button>
+        )}
       </div>
 
       <div className="alert-banner info" style={{marginBottom:16}}>
@@ -99,7 +105,7 @@ export default function BroadcastPage() {
         )}
       </div>
 
-      {showAdd && (
+      {showAdd && canBroadcast && (
         <Modal title="New Broadcast" onClose={()=>setShowAdd(false)} footer={modalFooter}>
           <div className="form-row">
             <div className="form-group">

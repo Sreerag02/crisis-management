@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
+import { io } from 'socket.io-client';
 import { useApp } from '../context/AppCtx';
 import { api } from '../services/api';
+import Heatmap from '../components/Heatmap';
+import VolunteerRegisterModal from '../components/VolunteerRegisterModal';
 
 export default function Dashboard() {
-  const { setPage } = useApp();
+  const { setPage, user } = useApp();
   const [data, setData] = useState({
     alerts: [],
     shelters: [],
@@ -13,9 +16,29 @@ export default function Dashboard() {
     broadcasts: []
   });
   const [loading, setLoading] = useState(true);
+  const [showVolunteerModal, setShowVolunteerModal] = useState(false);
 
   useEffect(() => {
     fetchDashboardData();
+
+    const socket = io('http://localhost:5000');
+    
+    socket.on('new_sos_alert', (newSOS) => {
+      console.log('New SOS received:', newSOS);
+      setData(prev => ({
+        ...prev,
+        sos: [newSOS, ...prev.sos]
+      }));
+    });
+
+    socket.on('crisis_alert', (alert) => {
+      setData(prev => ({
+        ...prev,
+        alerts: [alert, ...prev.alerts]
+      }));
+    });
+
+    return () => socket.close();
   }, []);
 
   const fetchDashboardData = async () => {
@@ -39,31 +62,41 @@ export default function Dashboard() {
 
   const stats = [
     { label:'Active Alerts', value: data.alerts.length, change:'Updated live', dir:'up', type:'critical' },
-    { label:'Shelters Open', value: data.shelters.length, change: `${data.shelters.filter(s=>s.status==='Near Full').length} near full`, dir:'up', type:'warning' },
-    { label:'Volunteers Active', value: data.volunteers.filter(v=>v.status==='Active').length, change: `${data.volunteers.filter(v=>v.status==='Deployed').length} deployed`, dir:'down', type:'good' },
+    { label:'Shelters Open', value: data.shelters.length, change: `${data.shelters.filter(s=>s.status==='Near Full').length || 0} near full`, dir:'up', type:'warning' },
+    { label:'Volunteers Active', value: data.volunteers.filter(v=>v.status==='Active').length, change: `${data.volunteers.filter(v=>v.status==='Deployed').length || 0} deployed`, dir:'down', type:'good' },
     { label:'Families Tracked', value: data.families.length, change:'Total households', dir:'up', type:'info' },
-    { label:'SOS Received', value: data.sos.length, change: `${data.sos.filter(s=>s.status==='pending').length} pending`, dir:'down', type:'critical' },
+    { label:'SOS Received', value: data.sos.length, change: `${data.sos.filter(s=>s.status==='active' || s.status==='pending').length} active`, dir:'down', type:'critical' },
     { label:'Broadcasts sent', value: data.broadcasts.length, change: 'Urgent calls', dir:'down', type:'good' },
   ];
 
   const activityFeed = data.alerts.slice(0, 3).map(a => ({
-    time: a.time || 'recent',
+    time: a.time || new Date(a.createdAt).toLocaleTimeString() || 'recent',
     msg: `Alert: ${a.title} in ${a.district}`,
     type: 'alert'
   })).concat(data.sos.slice(0, 3).map(s => ({
-    time: s.time || 'recent',
-    msg: `SOS: Request from ${s.name} at ${s.location}`,
+    time: s.time || new Date(s.createdAt).toLocaleTimeString() || 'recent',
+    msg: `SOS: Request from ${s.name} at ${s.location?.coordinates ? `${s.location.coordinates[1].toFixed(2)}, ${s.location.coordinates[0].toFixed(2)}` : 'Unknown'}`,
     type: 'sos'
   })));
 
   return (
     <div>
-      <div className="page-title">Situation Overview</div>
+      <div className="page-title">Situation Overview ({user?.role?.toUpperCase()})</div>
       <div className="page-subtitle">Kerala Flood Response 2026 · Last updated: {new Date().toLocaleTimeString()}</div>
-      
+
+      {user?.role === 'user' && (
+        <div className="alert-banner info" style={{ marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <span>🤝</span>
+            <div><strong>Want to help?</strong> Register as a volunteer to manage shelters, resources, and respond to emergencies.</div>
+          </div>
+          <button className="btn btn-primary btn-sm" onClick={() => setShowVolunteerModal(true)}>Register as Volunteer</button>
+        </div>
+      )}
+
       <div className="alert-banner danger">
         <span>🚨</span>
-        <div><strong>ORANGE ALERT ACTIVE</strong> — Ernakulam, Thrissur districts on high alert. {data.sos.filter(s=>s.status==='pending').length} SOS pending. Ensure all shelters are staffed.</div>
+        <div><strong>ORANGE ALERT ACTIVE</strong> — Ernakulam, Thrissur districts on high alert. {data.sos.filter(s=>s.status==='active' || s.status==='pending').length} SOS pending. Ensure all shelters are staffed.</div>
       </div>
 
       <div className="stats-grid">
@@ -80,40 +113,11 @@ export default function Dashboard() {
         <div>
           <div className="card mb-16">
             <div className="card-header">
-              <div className="card-title">🗺️ District Status Map</div>
+              <div className="card-title">🗺️ Real-time Crisis Heatmap</div>
               <button className="btn btn-outline btn-sm" onClick={()=>setPage('heatmap')}>Full Heatmap</button>
             </div>
-            <div className="map-container" style={{height:260}}>
-              <svg width="100%" height="260" style={{background:'linear-gradient(135deg,#c8dcea,#a8c4d4)'}}>
-                <rect x="80" y="30" width="120" height="80" rx="8" fill="#f39c12" opacity="0.7" stroke="white" strokeWidth="1.5"/>
-                <text x="140" y="70" textAnchor="middle" fill="white" fontSize="11" fontWeight="600">Kannur</text>
-                <text x="140" y="84" textAnchor="middle" fill="white" fontSize="10">ORANGE</text>
-                
-                <rect x="100" y="100" width="130" height="80" rx="8" fill="#e67e22" opacity="0.8" stroke="white" strokeWidth="1.5"/>
-                <text x="165" y="140" textAnchor="middle" fill="white" fontSize="11" fontWeight="600">Kozhikode</text>
-                <text x="165" y="154" textAnchor="middle" fill="white" fontSize="10">YELLOW</text>
-                
-                <rect x="110" y="170" width="130" height="80" rx="8" fill="#e74c3c" opacity="0.85" stroke="white" strokeWidth="2"/>
-                <text x="175" y="210" textAnchor="middle" fill="white" fontSize="11" fontWeight="600">Thrissur</text>
-                <text x="175" y="224" textAnchor="middle" fill="white" fontSize="10">ORANGE</text>
-                
-                <rect x="160" y="220" width="130" height="80" rx="8" fill="#c0392b" opacity="0.9" stroke="white" strokeWidth="2"/>
-                <text x="225" y="260" textAnchor="middle" fill="white" fontSize="11" fontWeight="700">Ernakulam</text>
-                <text x="225" y="274" textAnchor="middle" fill="white" fontSize="10">RED ALERT</text>
-                
-                <rect x="150" y="295" width="120" height="70" rx="8" fill="#27ae60" opacity="0.7" stroke="white" strokeWidth="1.5"/>
-                <text x="210" y="328" textAnchor="middle" fill="white" fontSize="11" fontWeight="600">TVM</text>
-                <text x="210" y="342" textAnchor="middle" fill="white" fontSize="10">GREEN</text>
-
-                <circle cx="310" cy="50" r="6" fill="white" opacity="0.9"/>
-                <text x="320" y="54" fill="white" fontSize="10">Red 🔴</text>
-                <circle cx="310" cy="68" r="6" fill="#e74c3c" opacity="0.9"/>
-                <text x="320" y="72" fill="white" fontSize="10">Orange</text>
-                <circle cx="310" cy="86" r="6" fill="#f39c12" opacity="0.9"/>
-                <text x="320" y="90" fill="white" fontSize="10">Yellow</text>
-                <circle cx="310" cy="104" r="6" fill="#27ae60" opacity="0.9"/>
-                <text x="320" y="108" fill="white" fontSize="10">Safe</text>
-              </svg>
+            <div style={{height: 280}}>
+              <Heatmap height="280px" interactive={false} />
             </div>
           </div>
           
@@ -187,6 +191,16 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      {showVolunteerModal && (
+        <VolunteerRegisterModal 
+          onClose={() => setShowVolunteerModal(false)} 
+          onRegistered={() => {
+            setShowVolunteerModal(false);
+            alert('Successfully registered as volunteer! Your access has been upgraded.');
+          }} 
+        />
+      )}
     </div>
   );
 }

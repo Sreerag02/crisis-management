@@ -11,9 +11,16 @@ import FamilyPage from './pages/FamilyPage';
 import BroadcastPage from './pages/BroadcastPage';
 import HeatmapPage from './pages/HeatmapPage';
 import SOSCenter from './pages/SOSCenter';
+import AuthPage from './pages/AuthPage';
 
 function App() {
-  const { page } = useApp();
+  const { page, user, loading } = useApp();
+
+  if (loading) return null;
+
+  if (!user) {
+    return <AuthPage />;
+  }
 
   const renderPage = () => {
     switch (page) {

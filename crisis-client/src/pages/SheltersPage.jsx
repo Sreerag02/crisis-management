@@ -1,11 +1,47 @@
 import React, { useState, useEffect } from 'react';
+import { useApp } from '../context/AppCtx';
+import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
+import L from 'leaflet';
 import { api } from '../services/api';
 
+// Fix for default marker icons
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+});
+
+function LocationPicker({ position, setPosition }) {
+  useMapEvents({
+    click(e) {
+      setPosition([e.latlng.lat, e.latlng.lng]);
+    },
+  });
+
+  return position ? <Marker position={position} draggable={true} eventHandlers={{
+    dragend: (e) => {
+      setPosition([e.target.getLatLng().lat, e.target.getLatLng().lng]);
+    }
+  }} /> : null;
+}
+
 export default function SheltersPage() {
+  const { user } = useApp();
   const [shelters, setShelters] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
-  const [form, setForm] = useState({name:'', district:'', capacity:100, occupied:0, status:'Available', facilities:[]});
+  const [form, setForm] = useState({
+    name:'',
+    district:'',
+    capacity:100,
+    occupied:0,
+    status:'Available',
+    facilities:[],
+    location: null
+  });
+
+  const canManage = user?.role === 'admin' || user?.role === 'volunteer';
 
   useEffect(() => {
     fetchShelters();
@@ -26,14 +62,27 @@ export default function SheltersPage() {
   const handleAdd = async () => {
     if (!form.name) return;
     try {
-      const newShelter = await api.shelters.create({
-        ...form,
+      const shelterData = {
+        name: form.name,
+        district: form.district,
         capacity: Number(form.capacity),
-        occupied: Number(form.occupied)
-      });
+        occupied: Number(form.occupied),
+        status: form.status,
+        facilities: form.facilities
+      };
+      
+      // Add location if provided
+      if (form.location) {
+        shelterData.location = {
+          lat: form.location[0],
+          lng: form.location[1]
+        };
+      }
+      
+      const newShelter = await api.shelters.create(shelterData);
       setShelters([...shelters, newShelter]);
       setShowAdd(false);
-      setForm({name:'', district:'', capacity:100, occupied:0, status:'Available', facilities:[]});
+      setForm({name:'', district:'', capacity:100, occupied:0, status:'Available', facilities:[], location: null});
     } catch (error) {
       console.error('Failed to add shelter:', error);
     }
@@ -77,7 +126,9 @@ export default function SheltersPage() {
           <div className="page-title">Shelter Management</div>
           <div className="page-subtitle">Real-time shelter capacity tracking and smart allocation</div>
         </div>
-        <button className="btn btn-primary" onClick={()=>setShowAdd(true)}>➕ Add Shelter</button>
+        {canManage && (
+          <button className="btn btn-primary" onClick={()=>setShowAdd(true)}>➕ Add Shelter</button>
+        )}
       </div>
 
       <div className="stats-grid" style={{gridTemplateColumns:'repeat(3,1fr)', marginBottom:16}}>
@@ -115,11 +166,15 @@ export default function SheltersPage() {
                       </div>
                     </div>
                     <div style={{display:'flex', flexDirection:'column', gap:6}}>
-                      <div style={{display:'flex', gap:6, marginBottom:6}}>
-                        <button className="btn btn-outline btn-sm" onClick={()=>updateOccupancy(s._id || s.id, -10)}>−10</button>
-                        <button className="btn btn-primary btn-sm" onClick={()=>updateOccupancy(s._id || s.id, 10)}>+10</button>
-                      </div>
-                      <button className="btn btn-outline btn-sm" onClick={()=>handleRemove(s._id || s.id)}>Remove</button>
+                      {canManage && (
+                        <div style={{display:'flex', gap:6, marginBottom:6}}>
+                          <button className="btn btn-outline btn-sm" onClick={()=>updateOccupancy(s._id || s.id, -10)}>−10</button>
+                          <button className="btn btn-primary btn-sm" onClick={()=>updateOccupancy(s._id || s.id, 10)}>+10</button>
+                        </div>
+                      )}
+                      {canManage && (
+                        <button className="btn btn-outline btn-sm" onClick={()=>handleRemove(s._id || s.id)}>Remove</button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -130,7 +185,7 @@ export default function SheltersPage() {
         )}
       </div>
 
-      {showAdd && (
+      {showAdd && canManage && (
         <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowAdd(false)}>
           <div className="modal">
             <div className="modal-header">
@@ -167,6 +222,35 @@ export default function SheltersPage() {
                     </label>
                   ))}
                 </div>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Shelter Location (Click on map to set)</label>
+                <div style={{ height: '300px', width: '100%', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--border)', marginBottom: '8px' }}>
+                  <MapContainer center={[10.0159, 76.3419]} zoom={9} style={{ height: '100%' }}>
+                    <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                    <LocationPicker
+                      position={form.location}
+                      setPosition={(pos) => setForm({ ...form, location: pos })}
+                    />
+                  </MapContainer>
+                </div>
+                {form.location ? (
+                  <div className="text-sm" style={{ color: 'var(--green)' }}>
+                    ✓ Location set: {form.location[0].toFixed(6)}, {form.location[1].toFixed(6)}
+                    <button 
+                      className="btn btn-outline btn-sm" 
+                      onClick={() => setForm({...form, location: null})}
+                      style={{ marginLeft: 12, fontSize: 11 }}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                ) : (
+                  <div className="text-sm text-light">
+                    💡 Click on the map to set shelter location. This helps people find the shelter during emergencies.
+                  </div>
+                )}
               </div>
             </div>
             <div className="modal-footer">

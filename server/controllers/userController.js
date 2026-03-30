@@ -1,12 +1,14 @@
 const User = require('../models/userModel');
+const Volunteer = require('../models/Volunteer');
 const generateToken = require('../utils/generateToken');
 const bcrypt = require('bcryptjs');
+require('dotenv').config();
 
 // @desc    Register a new user
 // @route   POST /api/client/register
 // @access  Public
 const registerUser = async (req, res) => {
-  const { name, email, password, aadhaar, mobile, familyGroup } = req.body;
+  const { name, email, password, aadhaar, mobile, familyGroup, role } = req.body;
 
   const userExists = await User.findOne({ $or: [{ email }, { aadhaar }] });
 
@@ -23,7 +25,8 @@ const registerUser = async (req, res) => {
     password: hashedPassword,
     aadhaar,
     mobile,
-    familyGroup
+    familyGroup,
+    role: role || 'user'
   });
 
   if (user) {
@@ -31,7 +34,7 @@ const registerUser = async (req, res) => {
       _id: user._id,
       name: user.name,
       email: user.email,
-      aadhaar: user.aadhaar,
+      role: user.role,
       token: generateToken(user._id)
     });
   } else {
@@ -45,15 +48,53 @@ const registerUser = async (req, res) => {
 const loginUser = async (req, res) => {
   const { email, password } = req.body;
 
-  const user = await User.findOne({ email });
+  let user;
 
-  if (user && (await bcrypt.compare(password, user.password))) {
+  // Check for admin login from .env credentials
+  const adminEmail = process.env.ADMIN_USER;
+  const adminPass = process.env.ADMIN_PASS;
+  
+  if (email === adminEmail && password === adminPass) {
+    // Admin login from environment variables
+    user = {
+      _id: 'admin_' + Date.now(),
+      name: 'Administrator',
+      email: adminEmail,
+      role: 'admin',
+      isAdmin: true
+    };
+  } else {
+    // Check if logging in as volunteer
+    const volunteer = await Volunteer.findOne({ email });
+    if (volunteer && (await bcrypt.compare(password, volunteer.password))) {
+      user = {
+        _id: volunteer._id,
+        name: volunteer.name,
+        email: volunteer.email,
+        role: 'volunteer',
+        volunteerId: volunteer._id
+      };
+    } else {
+      // Regular user login with email
+      const regularUser = await User.findOne({ email });
+      if (regularUser && (await bcrypt.compare(password, regularUser.password))) {
+        user = {
+          _id: regularUser._id,
+          name: regularUser.name,
+          email: regularUser.email,
+          role: regularUser.role || 'user',
+          isAdmin: regularUser.isAdmin
+        };
+      }
+    }
+  }
+
+  if (user) {
+    const token = generateToken(user._id);
     res.json({
-      _id: user._id,
-      name: user.name,
-      email: user.email,
-      isAdmin: user.isAdmin,
-      token: generateToken(user._id)
+      ...user,
+      token,
+      avatar: user.name?.charAt(0)?.toUpperCase() || 'A'
     });
   } else {
     res.status(401).json({ message: 'Invalid email or password' });
@@ -76,6 +117,16 @@ const updateUserStatus = async (req, res) => {
       };
     }
     await user.save();
+
+    // Emit status update via socket
+    const io = req.app.get('socketio');
+    if (io) {
+      io.emit('status_updated', {
+        userId: user._id,
+        status: user.status,
+        location: user.location
+      });
+    }
 
     let message = `Status updated to ${user.status}.`;
     if (user.familyGroup && user.familyMembers.length > 0) {

@@ -1,12 +1,42 @@
 import React, { useState, useEffect } from 'react';
+import { useApp } from '../context/AppCtx';
 import { api } from '../services/api';
+import { MapContainer, TileLayer, Marker, useMapEvents, Circle } from 'react-leaflet';
+import L from 'leaflet';
+
+// Map component to pick coordinates
+function LocationPicker({ position, setPosition, radius }) {
+  useMapEvents({
+    click(e) {
+      setPosition(e.latlng);
+    },
+  });
+
+  return (
+    <>
+      <Marker position={position} />
+      <Circle center={position} radius={radius} pathOptions={{ color: 'red' }} />
+    </>
+  );
+}
 
 export default function AlertsPage() {
+  const { user } = useApp();
   const [showAdd, setShowAdd] = useState(false);
   const [filter, setFilter] = useState('all');
-  const [form, setForm] = useState({district:'', severity:'medium', title:'', message:''});
+  const [form, setForm] = useState({
+    title: '',
+    description: '',
+    priority: 'medium',
+    lat: 10.0159,
+    lng: 76.3419,
+    radius: 1000,
+    district: 'Kochi'
+  });
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  const canIssueAlert = user?.role === 'admin';
 
   useEffect(() => {
     fetchAlerts();
@@ -16,28 +46,48 @@ export default function AlertsPage() {
     try {
       setLoading(true);
       const data = await api.alerts.getAll();
-      setAlerts(data);
+      setAlerts(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Failed to fetch alerts:', error);
+      setAlerts([]);
     } finally {
       setLoading(false);
     }
   };
 
-  const sevClass = s => ({critical:'badge-critical', high:'badge-high', medium:'badge-medium', low:'badge-low'}[s]);
-  const sevLabel = s => ({critical:'RED / Critical', high:'Orange / High', medium:'Yellow / Medium', low:'Green / Low'}[s]);
-  const filtered = filter==='all' ? alerts : alerts.filter(a=>a.severity===filter);
+  const sevClass = p => ({critical:'badge-critical', high:'badge-high', medium:'badge-medium', low:'badge-low'}[p || 'medium']);
+  const sevLabel = p => ({critical:'RED / Critical', high:'Orange / High', medium:'Yellow / Medium', low:'Green / Low'}[p || 'medium']);
+  
+  const filtered = filter === 'all'
+    ? alerts.filter(a => a.status !== 'resolved')
+    : alerts.filter(a => (a.severity || a.priority || 'medium') === filter && a.status !== 'resolved');
 
   const handleAdd = async () => {
-    if (!form.district || !form.title) return;
+    if (!form.title || !form.description) return;
     try {
       const newAlert = await api.alerts.create({
-        ...form,
-        time: new Date().toLocaleTimeString().slice(0, 5)
+        severity: form.priority,
+        district: form.district,
+        title: form.title,
+        message: form.description,
+        location: {
+          lat: form.lat,
+          lng: form.lng
+        },
+        radius: form.radius,
+        isCrisis: true
       });
       setAlerts([newAlert, ...alerts]);
       setShowAdd(false);
-      setForm({district:'', severity:'medium', title:'', message:''});
+      setForm({
+        title: '',
+        description: '',
+        priority: 'medium',
+        lat: 10.0159,
+        lng: 76.3419,
+        radius: 1000,
+        district: 'Kochi'
+      });
     } catch (error) {
       console.error('Failed to create alert:', error);
     }
@@ -45,8 +95,11 @@ export default function AlertsPage() {
 
   const handleResolve = async (id) => {
     try {
-      await api.alerts.delete(id);
+      await api.alerts.update(id, { status: 'resolved' });
+      // Remove from local state
       setAlerts(alerts.filter(a => (a._id || a.id) !== id));
+      // Also refresh from server to ensure consistency
+      fetchAlerts();
     } catch (error) {
       console.error('Failed to resolve alert:', error);
     }
@@ -56,17 +109,19 @@ export default function AlertsPage() {
     <div>
       <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:16}}>
         <div>
-          <div className="page-title">Active Alerts</div>
-          <div className="page-subtitle">District-level disaster alerts and notifications</div>
+          <div className="page-title">Active Crisis Alerts</div>
+          <div className="page-subtitle">Location-based disaster alerts and hazard zones</div>
         </div>
-        <button className="btn btn-danger" onClick={()=>setShowAdd(true)}>🚨 Issue New Alert</button>
+        {canIssueAlert && (
+          <button className="btn btn-danger" onClick={()=>setShowAdd(true)}>🚨 Issue New Alert</button>
+        )}
       </div>
 
       <div className="tab-bar">
         {['all','critical','high','medium','low'].map(f=>(
           <div key={f} className={`tab ${filter===f?'active':''}`} onClick={()=>setFilter(f)}>
             {f==='all'?'All Alerts':sevLabel(f)}
-            <span style={{marginLeft:6, fontSize:11, opacity:0.7}}>({f==='all'?alerts.length:alerts.filter(a=>a.severity===f).length})</span>
+            <span style={{marginLeft:6, fontSize:11, opacity:0.7}}>({f==='all'?alerts.length:alerts.filter(a=>(a.severity || a.priority || 'medium')===f).length})</span>
           </div>
         ))}
       </div>
@@ -76,65 +131,94 @@ export default function AlertsPage() {
           <div style={{textAlign:'center', padding:40, color:'var(--text-light)'}}>Loading alerts...</div>
         ) : (
           <>
-            {filtered.map(a=>(
-              <div key={a._id || a.id} className="card" style={{borderLeft:`4px solid ${a.severity==='critical'?'var(--red)':a.severity==='high'?'var(--orange)':a.severity==='medium'?'var(--amber)':'var(--green)'}`}}>
+            {filtered.map(a=>{
+              const severity = a.severity || a.priority || 'medium';
+              const coords = a.location?.coordinates;
+              return (
+              <div key={a._id || a.id} className="card" style={{borderLeft:`4px solid ${severity==='critical'?'var(--red)':severity==='high'?'var(--orange)':severity==='medium'?'var(--amber)':'var(--green)'}`}}>
                 <div style={{display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:12}}>
                   <div style={{flex:1}}>
                     <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:6}}>
-                      <span className={`badge ${sevClass(a.severity)}`}>{a.severity.toUpperCase()}</span>
-                      <span className="tag">📍 {a.district}</span>
-                      <span className="text-light text-sm font-mono">{a.time}</span>
+                      <span className={`badge ${sevClass(severity)}`}>{severity.toUpperCase()}</span>
+                      <span className="tag">📍 {coords && coords.length >= 2 ? `${coords[1].toFixed(4)}, ${coords[0].toFixed(4)}` : 'No Location'}</span>
+                      <span className="tag">⭕ {a.radius || 1000}m</span>
                     </div>
                     <div style={{fontWeight:700, fontSize:15, color:'var(--navy)', marginBottom:6}}>{a.title}</div>
-                    <div style={{fontSize:13, color:'var(--text-mid)', lineHeight:1.5}}>{a.message}</div>
+                    <div style={{fontSize:13, color:'var(--text-mid)', lineHeight:1.5}}>{a.message || a.description}</div>
                   </div>
                   <div style={{display:'flex', gap:8, flexShrink:0}}>
-                    <button className="btn btn-outline btn-sm">📢 Broadcast</button>
-                    <button className="btn btn-outline btn-sm" onClick={()=>handleResolve(a._id || a.id)}>Resolve</button>
+                    {canIssueAlert && (
+                      <>
+                        <button className="btn btn-outline btn-sm">📢 Broadcast</button>
+                        <button className="btn btn-outline btn-sm" onClick={()=>handleResolve(a._id || a.id)}>Resolve</button>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
-            ))}
-            {filtered.length===0 && <div style={{textAlign:'center', padding:40, color:'var(--text-light)'}}>No alerts for selected severity level.</div>}
+            )})}
+            {filtered.length===0 && <div style={{textAlign:'center', padding:40, color:'var(--text-light)'}}>No active alerts for selected priority level.</div>}
           </>
         )}
       </div>
 
-      {showAdd && (
+      {showAdd && canIssueAlert && (
         <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowAdd(false)}>
-          <div className="modal">
+          <div className="modal" style={{maxWidth: '800px', width: '90%'}}>
             <div className="modal-header">
-              <div className="modal-title">🚨 Issue New Alert</div>
+              <div className="modal-title">🚨 Issue New Location-Based Alert</div>
               <button className="modal-close" onClick={()=>setShowAdd(false)}>✕</button>
             </div>
-            <div className="modal-body">
-              <div className="alert-banner warning">Alerts are broadcast to all registered citizens and volunteers in the selected district.</div>
+            <div className="modal-body" style={{maxHeight: '70vh', overflowY: 'auto'}}>
+              <div className="alert-banner warning">Alerts will appear on the Heatmap as hazard zones with the specified radius.</div>
+              
+              <div className="form-row">
+                <div className="form-group" style={{flex: 2}}>
+                  <label className="form-label">Alert Title</label>
+                  <input className="form-control" placeholder="e.g. Flash Flood Warning" value={form.title} onChange={e=>setForm({...form, title:e.target.value})}/>
+                </div>
+                <div className="form-group" style={{flex: 1}}>
+                  <label className="form-label">Priority</label>
+                  <select className="form-control" value={form.priority} onChange={e=>setForm({...form, priority:e.target.value})}>
+                    <option value="critical">🔴 Critical</option>
+                    <option value="high">🟠 High</option>
+                    <option value="medium">🟡 Medium</option>
+                    <option value="low">🟢 Low</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Detailed Description</label>
+                <textarea className="form-control" rows="3" placeholder="Instructions for citizens..." value={form.description} onChange={e=>setForm({...form, description:e.target.value})}/>
+              </div>
+
               <div className="form-row">
                 <div className="form-group">
-                  <label className="form-label">District</label>
-                  <select className="form-control" value={form.district} onChange={e=>setForm({...form, district:e.target.value})}>
-                    <option value="">Select District</option>
-                    {['Thiruvananthapuram','Ernakulam','Thrissur','Kozhikode','Kannur','Palakkad','Malappuram','Kottayam','Kollam'].map(d=><option key={d}>{d}</option>)}
-                  </select>
+                  <label className="form-label">Impact Radius (meters)</label>
+                  <input type="number" className="form-control" value={form.radius} onChange={e=>setForm({...form, radius: parseInt(e.target.value)})}/>
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Severity Level</label>
-                  <select className="form-control" value={form.severity} onChange={e=>setForm({...form, severity:e.target.value})}>
-                    <option value="critical">🔴 RED – Critical</option>
-                    <option value="high">🟠 ORANGE – High</option>
-                    <option value="medium">🟡 YELLOW – Medium</option>
-                    <option value="low">🟢 GREEN – Low</option>
-                  </select>
+                  <label className="form-label">Coordinates</label>
+                  <div className="flex-center gap-8">
+                    <input className="form-control" value={form.lat.toFixed(6)} readOnly />
+                    <input className="form-control" value={form.lng.toFixed(6)} readOnly />
+                  </div>
                 </div>
               </div>
-              <div className="form-group">
-                <label className="form-label">Alert Title</label>
-                <input className="form-control" placeholder="e.g. Red Alert – Heavy Rainfall" value={form.title} onChange={e=>setForm({...form, title:e.target.value})}/>
+
+              <div style={{height: '300px', width: '100%', marginBottom: '16px', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--border)'}}>
+                <MapContainer center={[form.lat, form.lng]} zoom={13} style={{height: '100%'}}>
+                  <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                  <LocationPicker 
+                    position={{lat: form.lat, lng: form.lng}} 
+                    setPosition={(p) => setForm({...form, lat: p.lat, lng: p.lng})}
+                    radius={form.radius}
+                  />
+                </MapContainer>
+                <div className="text-xs text-light" style={{padding: '4px'}}>Click on the map to set alert center</div>
               </div>
-              <div className="form-group">
-                <label className="form-label">Detailed Message</label>
-                <textarea className="form-control" placeholder="Provide detailed information about the alert, what actions citizens should take…" value={form.message} onChange={e=>setForm({...form, message:e.target.value})}/>
-              </div>
+
             </div>
             <div className="modal-footer">
               <button className="btn btn-outline" onClick={()=>setShowAdd(false)}>Cancel</button>

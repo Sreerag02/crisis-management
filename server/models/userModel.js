@@ -10,12 +10,14 @@ const userSchema = new mongoose.Schema({
   familyMembers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   status: { type: String, enum: ['safe', 'evacuated', 'need_help', 'unknown'], default: 'unknown' },
   location: {
-    type: { type: String, default: 'Point' },
-    coordinates: { type: [Number], default: [0, 0] } // [lng, lat]
+    type: { type: String, enum: 'Point' },
+    coordinates: { type: [Number] } // [lng, lat] - optional
   },
+  role: { type: String, enum: ['admin', 'user', 'volunteer'], default: 'user' },
   isAdmin: { type: Boolean, default: false }
 }, { timestamps: true });
 
-userSchema.index({ location: '2dsphere' });
+// Create 2dsphere index for geospatial queries (sparse - only indexes docs with location)
+userSchema.index({ location: '2dsphere' }, { sparse: true });
 
 module.exports = mongoose.model('User', userSchema);

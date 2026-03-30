@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
+import { useApp } from '../context/AppCtx';
 import { api } from '../services/api';
 
 export default function ResourcePage() {
+  const { user } = useApp();
   const [resources, setResources] = useState([]);
   const [shelters, setShelters] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -9,6 +11,8 @@ export default function ResourcePage() {
   const [showDispatch, setShowDispatch] = useState(null);
   const [form, setForm] = useState({type:'', location:'', total:0, available:0, unit:'units'});
   const [dispatchQty, setDispatchQty] = useState(10);
+
+  const canManage = user?.role === 'admin' || user?.role === 'volunteer';
 
   useEffect(() => {
     fetchData();
@@ -87,7 +91,9 @@ export default function ResourcePage() {
           <div className="page-title">Resource & Equipment Tracking</div>
           <div className="page-subtitle">Geo-tagged resource inventory with smart allocation</div>
         </div>
-        <button className="btn btn-primary" onClick={()=>setShowAdd(true)}>➕ Add Resource</button>
+        {canManage && (
+          <button className="btn btn-primary" onClick={()=>setShowAdd(true)}>➕ Add Resource</button>
+        )}
       </div>
 
       <div className="grid-2">
@@ -110,10 +116,12 @@ export default function ResourcePage() {
                   </div>
                   <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
                     <span className="text-sm text-light">{pct}% available · {r.unit}</span>
-                    <div style={{display:'flex', gap:6}}>
-                      <button className="btn btn-warning btn-sm" onClick={()=>{setShowDispatch(r); setDispatchQty(Math.min(10, r.available));}}>Dispatch</button>
-                      <button className="btn btn-success btn-sm" onClick={()=>handleRestock(r._id || r.id, r.available, r.total)}>+Restock</button>
-                    </div>
+                    {canManage && (
+                      <div style={{display:'flex', gap:6}}>
+                        <button className="btn btn-warning btn-sm" onClick={()=>{setShowDispatch(r); setDispatchQty(Math.min(10, r.available));}}>Dispatch</button>
+                        <button className="btn btn-success btn-sm" onClick={()=>handleRestock(r._id || r.id, r.available, r.total)}>+Restock</button>
+                      </div>
+                    )}
                   </div>
                 </div>
               );
@@ -123,7 +131,7 @@ export default function ResourcePage() {
         )}
       </div>
 
-      {showDispatch && (
+      {showDispatch && canManage && (
         <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowDispatch(null)}>
           <div className="modal">
             <div className="modal-header">
@@ -155,7 +163,7 @@ export default function ResourcePage() {
         </div>
       )}
 
-      {showAdd && (
+      {showAdd && canManage && (
         <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowAdd(false)}>
           <div className="modal">
             <div className="modal-header">

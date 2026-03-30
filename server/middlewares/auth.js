@@ -22,11 +22,23 @@ const protect = async (req, res, next) => {
 };
 
 const admin = (req, res, next) => {
-  if (req.user && req.user.isAdmin) {
+  if (req.user && (req.user.role === 'admin' || req.user.isAdmin)) {
     next();
   } else {
     res.status(401).json({ message: 'Not authorized as an admin' });
   }
 };
 
-module.exports = { protect, admin };
+const authorize = (...roles) => {
+  return (req, res, next) => {
+    if (req.user && (roles.includes(req.user.role) || (roles.includes('admin') && req.user.isAdmin))) {
+      next();
+    } else {
+      res.status(403).json({
+        message: `User role ${req.user ? req.user.role : 'none'} is not authorized to access this route`
+      });
+    }
+  };
+};
+
+module.exports = { protect, admin, authorize };

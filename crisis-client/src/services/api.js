@@ -107,5 +107,8 @@ export const api = {
       body: JSON.stringify(data),
     }).then(handleResponse),
     getAll: () => fetch(`${API_URL}/admin/sos-alerts`).then(handleResponse), // This might need protection later
+  },
+  heatmap: {
+    getLocations: () => fetch(`${API_URL}/heatmap/data`).then(handleResponse),
   }
 };
