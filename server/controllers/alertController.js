@@ -187,8 +187,7 @@ const createAlert = asyncHandler(async (req, res) => {
     console.log('\n=== SENDING VOLUNTEER NOTIFICATIONS ===');
     const volunteersInArea = await User.find({
       role: 'volunteer',
-      'location.type': 'Point',
-      'location.coordinates': {
+      location: {
         $near: {
           $geometry: {
             type: 'Point',

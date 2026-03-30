@@ -22,6 +22,31 @@ const getShelterById = asyncHandler(async (req, res) => {
   }
 });
 
+// @desc    Get nearby shelters
+// @route   GET /api/shelters/nearby
+// @access  Public
+const getNearbyShelters = asyncHandler(async (req, res) => {
+  const { lat, lng, radius = 10000 } = req.query;
+  
+  if (!lat || !lng) {
+    return res.status(400).json({ message: 'Latitude and longitude are required' });
+  }
+  
+  const shelters = await Shelter.find({
+    location: {
+      $near: {
+        $geometry: {
+          type: 'Point',
+          coordinates: [parseFloat(lng), parseFloat(lat)]
+        },
+        $maxDistance: parseFloat(radius)
+      }
+    }
+  }).limit(10);
+  
+  res.json(shelters);
+});
+
 // @desc    Create a shelter
 // @route   POST /api/shelters
 // @access  Private/Admin
@@ -82,6 +107,7 @@ const deleteShelter = asyncHandler(async (req, res) => {
 module.exports = {
   getShelters,
   getShelterById,
+  getNearbyShelters,
   createShelter,
   updateShelter,
   deleteShelter,

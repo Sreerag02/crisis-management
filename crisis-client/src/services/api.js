@@ -60,6 +60,7 @@ export const api = {
   },
   shelters: {
     getAll: () => fetch(`${API_URL}/shelters`).then(handleResponse),
+    getNearby: (lat, lng, radius = 10000) => fetch(`${API_URL}/shelters/nearby?lat=${lat}&lng=${lng}&radius=${radius}`).then(handleResponse),
     create: (data) => fetch(`${API_URL}/shelters`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

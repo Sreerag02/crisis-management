@@ -35,6 +35,8 @@ export default function AlertsPage() {
   });
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [nearbyShelters, setNearbyShelters] = useState([]);
+  const [showNearbyShelters, setShowNearbyShelters] = useState(false);
 
   const canIssueAlert = user?.role === 'admin';
 
@@ -88,6 +90,13 @@ export default function AlertsPage() {
         radius: 1000,
         district: 'Kochi'
       });
+      
+      // Fetch nearby shelters for the crisis location
+      const shelters = await api.shelters.getNearby(form.lat, form.lng, form.radius + 5000);
+      if (shelters.length > 0) {
+        setNearbyShelters(shelters);
+        setShowNearbyShelters(true);
+      }
     } catch (error) {
       console.error('Failed to create alert:', error);
     }
@@ -125,6 +134,38 @@ export default function AlertsPage() {
           </div>
         ))}
       </div>
+
+      {/* Nearby Shelters Section - Shows after creating a crisis alert */}
+      {showNearbyShelters && nearbyShelters.length > 0 && (
+        <div style={{marginBottom: 24, padding: '16px', background: 'rgba(34, 197, 94, 0.05)', borderRadius: '12px', border: '1px solid rgba(34, 197, 94, 0.2)'}}>
+          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12}}>
+            <div>
+              <div style={{fontSize:16, fontWeight:700, color:'var(--navy)'}}>🏠 Safe Shelters Near Crisis Location</div>
+              <div style={{fontSize:13, color:'var(--text-light)'}}>Shelters within {Math.round((form.radius + 5000) / 1000)}km of the crisis zone</div>
+            </div>
+            <button className="btn btn-outline btn-sm" onClick={()=>setShowNearbyShelters(false)}>Dismiss</button>
+          </div>
+          <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(250px, 1fr))', gap:12}}>
+            {nearbyShelters.map(s=>{
+              const pct = Math.round(s.occupied/s.capacity*100);
+              const color = pct>=95?'var(--red)':pct>=80?'var(--orange)':'var(--green)';
+              return (
+                <div key={`shelter-${s._id || s.id}`} className="card" style={{borderLeft:`4px solid ${color}`, marginBottom:0}}>
+                  <div style={{fontWeight:700, fontSize:14, color:'var(--navy)', marginBottom:6}}>{s.name}</div>
+                  <div style={{display:'flex', gap:8, marginBottom:8, flexWrap:'wrap'}}>
+                    <span className="tag" style={{fontSize:11}}>📍 {s.district}</span>
+                    <span className="tag" style={{fontSize:11}}>{s.status}</span>
+                  </div>
+                  <div className="progress-bar" style={{marginBottom:6}}>
+                    <div className="progress-fill" style={{width:pct+'%', background:color}}/>
+                  </div>
+                  <div style={{fontSize:12, color:'var(--text-light)'}}>{s.occupied}/{s.capacity} occupied ({pct}%)</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div style={{display:'flex', flexDirection:'column', gap:12}}>
         {loading ? (

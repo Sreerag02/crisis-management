@@ -29,8 +29,11 @@ function LocationPicker({ position, setPosition }) {
 export default function SheltersPage() {
   const { user } = useApp();
   const [shelters, setShelters] = useState([]);
+  const [nearbyShelters, setNearbyShelters] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
+  const [showNearby, setShowNearby] = useState(false);
+  const [userLocation, setUserLocation] = useState(null);
   const [form, setForm] = useState({
     name:'',
     district:'',
@@ -45,6 +48,26 @@ export default function SheltersPage() {
 
   useEffect(() => {
     fetchShelters();
+    // Get user location for nearby shelters calculation
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const loc = {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+          };
+          setUserLocation(loc);
+          fetchNearbyShelters(loc.lat, loc.lng);
+        },
+        (error) => {
+          console.error('Error getting location:', error);
+          // Default to Kochi if geolocation fails
+          const defaultLoc = { lat: 10.0159, lng: 76.3419 };
+          setUserLocation(defaultLoc);
+          fetchNearbyShelters(defaultLoc.lat, defaultLoc.lng);
+        }
+      );
+    }
   }, []);
 
   const fetchShelters = async () => {
@@ -59,6 +82,18 @@ export default function SheltersPage() {
     }
   };
 
+  const fetchNearbyShelters = async (lat, lng, radius = 10000) => {
+    try {
+      const data = await api.shelters.getNearby(lat, lng, radius);
+      setNearbyShelters(data);
+      if (data.length > 0) {
+        setShowNearby(true);
+      }
+    } catch (error) {
+      console.error('Failed to fetch nearby shelters:', error);
+    }
+  };
+
   const handleAdd = async () => {
     if (!form.name) return;
     try {
@@ -70,7 +105,7 @@ export default function SheltersPage() {
         status: form.status,
         facilities: form.facilities
       };
-      
+
       // Add location if provided
       if (form.location) {
         shelterData.location = {
@@ -78,11 +113,15 @@ export default function SheltersPage() {
           lng: form.location[1]
         };
       }
-      
+
       const newShelter = await api.shelters.create(shelterData);
       setShelters([...shelters, newShelter]);
       setShowAdd(false);
       setForm({name:'', district:'', capacity:100, occupied:0, status:'Available', facilities:[], location: null});
+      // Refresh nearby shelters if we have location
+      if (userLocation) {
+        fetchNearbyShelters(userLocation.lat, userLocation.lng);
+      }
     } catch (error) {
       console.error('Failed to add shelter:', error);
     }
@@ -91,7 +130,7 @@ export default function SheltersPage() {
   const updateOccupancy = async (id, delta) => {
     const shelter = shelters.find(s => (s._id || s.id) === id);
     if (!shelter) return;
-    
+
     const newOcc = Math.max(0, Math.min(shelter.capacity, shelter.occupied + delta));
     const pct = newOcc / shelter.capacity;
     const newStatus = pct >= 1 ? 'Full' : pct >= 0.85 ? 'Near Full' : 'Available';
@@ -104,6 +143,8 @@ export default function SheltersPage() {
       });
       if (response.ok) {
         setShelters(shelters.map(s => (s._id || s.id) === id ? { ...s, occupied: newOcc, status: newStatus } : s));
+        // Update nearby shelters list too
+        setNearbyShelters(nearbyShelters.map(s => (s._id || s.id) === id ? { ...s, occupied: newOcc, status: newStatus } : s));
       }
     } catch (error) {
       console.error('Failed to update occupancy:', error);
@@ -114,6 +155,7 @@ export default function SheltersPage() {
     try {
       await api.shelters.delete(id);
       setShelters(shelters.filter(s => (s._id || s.id) !== id));
+      setNearbyShelters(nearbyShelters.filter(s => (s._id || s.id) !== id));
     } catch (error) {
       console.error('Failed to remove shelter:', error);
     }
@@ -130,6 +172,44 @@ export default function SheltersPage() {
           <button className="btn btn-primary" onClick={()=>setShowAdd(true)}>➕ Add Shelter</button>
         )}
       </div>
+
+      {/* Nearby Shelters Section - Auto-calculated based on crisis location */}
+      {showNearby && nearbyShelters.length > 0 && (
+        <div style={{marginBottom: 24}}>
+          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12}}>
+            <div>
+              <div style={{fontSize:16, fontWeight:700, color:'var(--navy)'}}>🏠 Nearby Safe Shelters</div>
+              <div style={{fontSize:13, color:'var(--text-light)'}}>Automatically calculated based on your location (10km radius)</div>
+            </div>
+            <button className="btn btn-outline btn-sm" onClick={()=>setShowNearby(false)}>Dismiss</button>
+          </div>
+          <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(280px, 1fr))', gap:12}}>
+            {nearbyShelters.map(s=>{
+              const pct = Math.round(s.occupied/s.capacity*100);
+              const color = pct>=95?'var(--red)':pct>=80?'var(--orange)':'var(--green)';
+              return (
+                <div key={`nearby-${s._id || s.id}`} className="card" style={{borderLeft:`4px solid ${color}`}}>
+                  <div style={{fontWeight:700, fontSize:14, color:'var(--navy)', marginBottom:6}}>{s.name}</div>
+                  <div style={{display:'flex', gap:8, marginBottom:8, flexWrap:'wrap'}}>
+                    <span className="tag" style={{fontSize:11}}>📍 {s.district}</span>
+                    <span className="tag" style={{fontSize:11}}>{s.status}</span>
+                  </div>
+                  <div className="progress-bar" style={{marginBottom:6}}>
+                    <div className="progress-fill" style={{width:pct+'%', background:color}}/>
+                  </div>
+                  <div style={{fontSize:12, color:'var(--text-light)'}}>{s.occupied}/{s.capacity} occupied ({pct}%)</div>
+                  {s.facilities && s.facilities.length > 0 && (
+                    <div style={{display:'flex', gap:4, flexWrap:'wrap', marginTop:6}}>
+                      {s.facilities.slice(0, 3).map(f=><span key={f} className="tag" style={{fontSize:10, padding:'2px 6px'}}>✓ {f}</span>)}
+                      {s.facilities.length > 3 && <span className="tag" style={{fontSize:10, padding:'2px 6px'}}>+{s.facilities.length - 3}</span>}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="stats-grid" style={{gridTemplateColumns:'repeat(3,1fr)', marginBottom:16}}>
         <div className="stat-card good"><div className="stat-label">Available</div><div className="stat-value">{shelters.filter(s=>s.status==='Available').length}</div></div>
@@ -238,8 +318,8 @@ export default function SheltersPage() {
                 {form.location ? (
                   <div className="text-sm" style={{ color: 'var(--green)' }}>
                     ✓ Location set: {form.location[0].toFixed(6)}, {form.location[1].toFixed(6)}
-                    <button 
-                      className="btn btn-outline btn-sm" 
+                    <button
+                      className="btn btn-outline btn-sm"
                       onClick={() => setForm({...form, location: null})}
                       style={{ marginLeft: 12, fontSize: 11 }}
                     >
