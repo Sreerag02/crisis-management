@@ -1,4 +1,5 @@
 const API_URL = 'https://crisis-management-web.vercel.app/';
+//committed
 
 const handleResponse = async (response) => {
   if (!response.ok) {
