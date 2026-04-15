@@ -1,4 +1,4 @@
-const API_URL = 'https://crisis-management-web.vercel.app/';
+const API_URL = 'https://crisis-management-p02qwqtq2-sreerag-krishna-ss-projects.vercel.app/';
 //committed
 
 const handleResponse = async (response) => {
