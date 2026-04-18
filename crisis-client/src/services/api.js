@@ -1,4 +1,4 @@
-const API_URL ='https://crisis-management-server.vercel.app/';
+const API_URL ='https://crisis-management-server.vercel.app';
 //committed
 
 const handleResponse = async (response) => {
